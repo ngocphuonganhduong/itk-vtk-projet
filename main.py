@@ -1,4 +1,5 @@
 # coding=utf-8
+import itk
 import vtk
 
 DIR = './'
@@ -6,14 +7,30 @@ FILEPATH = DIR + "BRATS_HG0015_T1C.mha"
 
 
 def main():
-	reader = vtk.vtkMetaImageReader()
+	# ITK version should < 5.1 to use ImageToVTKImageFilter
+	print("ITK version: ", itk.Version.GetITKVersion())
+	
+	pixel_type = itk.ctype('short')
+	dim = 3
+	image_type = itk.Image[pixel_type, dim]
+	
+	reader = itk.ImageFileReader[image_type].New()
 	reader.SetFileName(FILEPATH)
 	reader.Update()
+	
+	# segmentation
+	
+	
+	
+	# convert itk image to vtk image data
+	itk_to_vtk_filter = itk.ImageToVTKImageFilter[image_type].New()
+	itk_to_vtk_filter.SetInput(reader.GetOutput())
+	itk_to_vtk_filter.Update()
 	
 	# create volume from metadata
 	volume = vtk.vtkVolume()
 	mapper = vtk.vtkSmartVolumeMapper()
-	mapper.SetInputConnection(reader.GetOutputPort())
+	mapper.SetInputData(itk_to_vtk_filter.GetOutput())
 	volume.SetMapper(mapper)
 	
 	color_func = vtk.vtkColorTransferFunction()
