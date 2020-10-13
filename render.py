@@ -1,6 +1,28 @@
 # coding=utf-8
 import itk
 import vtk
+from multiprocessing import Process, cpu_count
+
+
+def render_volume(volume):
+	# render volume
+	ren = vtk.vtkRenderer()
+	ren_win = vtk.vtkRenderWindow()
+	ren_win.AddRenderer(ren)
+	
+	iren = vtk.vtkRenderWindowInteractor()
+	iren.SetRenderWindow(ren_win)
+	iren.GetInteractorStyle().SetDefaultRenderer(ren)
+	
+	ren_win.SetSize(300, 300)
+	# ren_win.Render()
+	
+	ren.AddVolume(volume)
+	ren.ResetCamera()
+	
+	iren.Initialize()
+	ren_win.Render()
+	iren.Start()
 
 
 def render(image_type, image_data):
@@ -25,21 +47,9 @@ def render(image_type, image_data):
 	volume.SetProperty(property)
 	volume.SetMapper(mapper)
 	
-	# render volume
-	ren = vtk.vtkRenderer()
-	ren_win = vtk.vtkRenderWindow()
-	ren_win.AddRenderer(ren)
-	
-	iren = vtk.vtkRenderWindowInteractor()
-	iren.SetRenderWindow(ren_win)
-	iren.GetInteractorStyle().SetDefaultRenderer(ren)
-	
-	ren_win.SetSize(300, 300)
-	# ren_win.Render()
-	
-	ren.AddVolume(volume)
-	ren.ResetCamera()
-	
-	iren.Initialize()
-	ren_win.Render()
-	iren.Start()
+	p = Process(target=render_volume, args=(volume,))
+	q = Process(target=render_volume, args=(volume,))
+	q.start()
+	p.start()
+	q.join()
+	p.join()
