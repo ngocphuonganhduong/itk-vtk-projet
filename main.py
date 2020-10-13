@@ -27,7 +27,7 @@ def main():
 	itk_to_vtk_filter.SetInput(reader.GetOutput())
 	itk_to_vtk_filter.Update()
 	
-	# create volume from metadata
+	# create volume from image data
 	volume = vtk.vtkVolume()
 	mapper = vtk.vtkSmartVolumeMapper()
 	mapper.SetInputData(itk_to_vtk_filter.GetOutput())
