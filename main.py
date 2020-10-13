@@ -27,7 +27,18 @@ def main():
 	reader.Update()
 	
 	# segmentation
-	segmented_image_data = reader.GetOutput()
+	segment = itk.ConnectedThresholdImageFilter[image_type, image_type].New()
+	segment.SetInput(reader.GetOutput())
+	segment.SetSeed([100, 100, 100])
+	segment.SetUpper(600)
+	segment.SetLower(100)
+
+	rescaler = itk.RescaleIntensityImageFilter[image_type, image_type].New()
+	rescaler.SetInput(segment.GetOutput())
+	rescaler.SetOutputMinimum(0)
+	rescaler.SetOutputMaximum(255)
+	
+	segmented_image_data = rescaler.GetOutput()
 	save_image(image_type, segmented_image_data)
 	
 	# render volume and slices
