@@ -2,3 +2,4 @@
 *.mha
 *.nii
 *.tk
+__pycache__/
