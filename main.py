@@ -41,12 +41,29 @@ def main():
 	segment.SetUpper(1500)
 	segment.SetLower(900)
 
-	rescaler = itk.RescaleIntensityImageFilter[input_image_type, output_image_type].New()
+	rescaler = itk.RescaleIntensityImageFilter[input_image_type, input_image_type].New()
 	rescaler.SetInput(segment.GetOutput())
 	rescaler.SetOutputMinimum(0)
 	rescaler.SetOutputMaximum(255)
-	
-	segmented_image_data = rescaler.GetOutput()
+
+	structuring_element_type = itk.FlatStructuringElement[dim]
+	element1 = structuring_element_type.Ball(3)
+	element2 = structuring_element_type.Ball(2)
+
+	closing = itk.GrayscaleMorphologicalClosingImageFilter[input_image_type, 
+    	input_image_type, structuring_element_type].New()
+	closing.SetInput(rescaler.GetOutput())
+	closing.SetKernel(element1)
+  
+	opening = itk.GrayscaleMorphologicalOpeningImageFilter[input_image_type, 
+    	input_image_type, structuring_element_type].New()
+	opening.SetInput(closing.GetOutput())
+	opening.SetKernel(element2)
+
+	cast = itk.CastImageFilter[input_image_type, output_image_type].New()
+	cast.SetInput(opening.GetOutput())
+     	
+	segmented_image_data = cast.GetOutput()
 	save_image(output_image_type, segmented_image_data)
 	
 	# render volume and slices
