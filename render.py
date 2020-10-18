@@ -1,25 +1,6 @@
 # coding=utf-8
 import itk
 import vtk
-from multiprocessing import Process
-
-
-def render_volume(volume):
-	ren = vtk.vtkRenderer()
-	ren_win = vtk.vtkRenderWindow()
-	ren_win.AddRenderer(ren)
-	ren_win.SetSize(480, 480)
-	
-	iren = vtk.vtkRenderWindowInteractor()
-	iren.SetRenderWindow(ren_win)
-	iren.GetInteractorStyle().SetDefaultRenderer(ren)
-	
-	ren.AddVolume(volume)
-	ren.ResetCamera()
-	
-	iren.Initialize()
-	ren_win.Render()
-	iren.Start()
 
 
 class CustomRender:
@@ -49,21 +30,36 @@ class CustomRender:
 		self.actor = vtk.vtkImageActor()
 		self.actor.GetMapper().SetInputConnection(color.GetOutputPort())
 	
-	def __set_up_renderer(self):
-		self.ren = vtk.vtkRenderer()
-		self.ren.AddActor(self.actor)
-		self.ren.ResetCamera()
+	def __set_up_renderer(self, volume):
+		self.img_ren = vtk.vtkRenderer()
+		self.img_ren.AddActor(self.actor)
+		self.img_ren.ResetCamera()
+		self.img_ren.SetViewport([0.0, 0.0, 1.0, 0.5])
+
+		self.vol_ren = vtk.vtkRenderer()
+		self.vol_ren.AddVolume(volume)
+		self.vol_ren.ResetCamera()
+		self.vol_ren.SetViewport(0.0, 0.5, 1.0, 1.0)
+		self.vol_ren.SetBackground(0.0, 0.01, 0.05)
 		
 		self.win = vtk.vtkRenderWindow()
-		self.win.AddRenderer(self.ren)
-		self.win.SetSize(480, 480)
-		
-		self.style = vtk.vtkInteractorStyleImage()
-		self.style.AddObserver("RightButtonReleaseEvent", self.switch_axis_call_back)
+		self.win.SetSize(400, 800)
+		self.win.AddRenderer(self.img_ren)
+		self.win.AddRenderer(self.vol_ren)
+
 		self.iren = vtk.vtkRenderWindowInteractor()
-		self.iren.SetInteractorStyle(self.style)
-		self.win.SetInteractor(self.iren)
-	
+		self.iren.SetRenderWindow(self.win)
+
+		# set styles for interactor
+		self.image_style = vtk.vtkInteractorStyleImage()
+		self.image_style.AddObserver("RightButtonReleaseEvent", self.switch_axis_call_back)
+		self.image_style.SetDefaultRenderer(self.img_ren)
+
+		self.volume_style = vtk.vtkInteractorStyleSwitch()
+		self.volume_style.SetDefaultRenderer(self.vol_ren)
+
+		self.iren.AddObserver("MouseMoveEvent", self.switch_interactor_style)
+
 	def __set_up_slider(self):
 		minv, maxv = 0.0, 100.0
 		self.slider_rep = vtk.vtkSliderRepresentation2D()
@@ -71,16 +67,16 @@ class CustomRender:
 		self.slider_rep.SetMaximumValue(maxv)
 		self.slider_rep.SetValue((maxv - minv) / 2.0)
 		self.slider_rep.SetTitleText(self.axes_name[self.axis])
-		
+
 		self.slider_rep.GetSliderProperty().SetColor(1, 1, 0.1)
 		self.slider_rep.GetSelectedProperty().SetColor(0, 1, 0)
 		self.slider_rep.GetCapProperty().SetColor(0, 0.2, 0.5)
 		self.slider_rep.GetTubeProperty().SetColor(0, 0.1, 0.4)
 		self.slider_rep.GetPoint1Coordinate().SetCoordinateSystemToDisplay()
-		self.slider_rep.GetPoint1Coordinate().SetValue(60, 100)
+		self.slider_rep.GetPoint1Coordinate().SetValue(60, 450)
 		self.slider_rep.GetPoint2Coordinate().SetCoordinateSystemToDisplay()
-		self.slider_rep.GetPoint2Coordinate().SetValue(260, 100)
-		
+		self.slider_rep.GetPoint2Coordinate().SetValue(260, 450)
+
 		self.slider_wid = vtk.vtkSliderWidget()
 		self.slider_wid.SetInteractor(self.iren)
 		self.slider_wid.SetRepresentation(self.slider_rep)
@@ -88,7 +84,7 @@ class CustomRender:
 		self.slider_wid.EnabledOn()
 		self.slider_wid.AddObserver(vtk.vtkCommand.InteractionEvent, self.slider_call_back)
 	
-	def __init__(self, reader, default_axis=0):
+	def __init__(self, reader, volume, default_axis=0):
 		min_x, max_x, min_y, max_y, min_z, max_z = reader.GetExecutive().GetWholeExtent(reader.GetOutputInformation(0))
 		spacing = reader.GetOutput().GetSpacing()
 		self.origin = reader.GetOutput().GetOrigin()
@@ -114,7 +110,7 @@ class CustomRender:
 		self.__set_up_filter(reader)
 		
 		self.__set_up_drawing_actor()
-		self.__set_up_renderer()
+		self.__set_up_renderer(volume)
 		self.__set_up_slider()
 	
 	def render(self):
@@ -136,17 +132,17 @@ class CustomRender:
 		self.slider_rep.SetTitleText(self.axes_name[self.axis])
 		self.win.Render()
 
+	def switch_interactor_style(self, obj, event):
+		last_pos = self.iren.GetLastEventPosition()
+		cur_pos = self.iren.GetEventPosition()
+		ren = self.iren.FindPokedRenderer(cur_pos[0], last_pos[1])
+		if ren == self.img_ren:
+			self.iren.SetInteractorStyle(self.image_style)
+		else:
+			self.iren.SetInteractorStyle(self.volume_style)
 
-def render_slicer(vtk_image_data):
-	cast_filter = vtk.vtkImageCast()
-	cast_filter.SetInputData(vtk_image_data)
-	cast_filter.Update()
 
-	custom_ren = CustomRender(cast_filter)
-	custom_ren.render()
-
-
-def render(image_type, image_data):
+def render(input_image_type, input_image_data, image_type, image_data):
 	# convert itk image to vtk image data
 	itk_to_vtk_filter = itk.ImageToVTKImageFilter[image_type].New()
 	itk_to_vtk_filter.SetInput(image_data)
@@ -170,9 +166,9 @@ def render(image_type, image_data):
 	volume.SetProperty(volume_property)
 	volume.SetMapper(mapper)
 	
-	p = Process(target=render_volume, args=(volume,))
-	q = Process(target=render_slicer, args=(vtk_image_data,))
-	q.start()
-	p.start()
-	q.join()
-	p.join()
+	cast_filter = vtk.vtkImageCast()
+	cast_filter.SetInputData(vtk_image_data)
+	cast_filter.Update()
+
+	custom_ren = CustomRender(cast_filter, volume)
+	custom_ren.render()

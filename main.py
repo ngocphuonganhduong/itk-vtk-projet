@@ -3,7 +3,8 @@ import itk
 from render import render
 
 DIR = './'
-FILEPATH = DIR + "BRATS_HG0015_T1C.mha"
+FILENAME = "BRATS_HG0015_T1C.mha"
+FILEPATH = DIR + FILENAME
 OUTPUT_PATH = DIR + "output.mha"
 
 
@@ -17,7 +18,7 @@ def save_image(image_type, image_data):
 def main():
 	# ITK version should < 5.1 to use ImageToVTKImageFilter
 	print("ITK version: ", itk.Version.GetITKVersion())
-	
+	print("Start processing image " + FILENAME)
 	input_pixel_type = itk.ctype('float')
 	output_pixel_type = itk.ctype('short')
 	dim = 3
@@ -27,10 +28,11 @@ def main():
 	reader = itk.ImageFileReader[input_image_type].New()
 	reader.SetFileName(FILEPATH)
 	reader.Update()
-	
+	input_image_data = reader.GetOutput()
+
 	# segmentation
 	prefilter = itk.GradientAnisotropicDiffusionImageFilter[input_image_type, input_image_type].New()
-	prefilter.SetInput(reader.GetOutput())
+	prefilter.SetInput(input_image_data)
 	prefilter.SetNumberOfIterations(20)
 	prefilter.SetConductanceParameter(3)
 	prefilter.SetTimeStep(0.04)
@@ -67,7 +69,8 @@ def main():
 	save_image(output_image_type, segmented_image_data)
 	
 	# render volume and slices
-	render(output_image_type, segmented_image_data)
+	print("Render image - right click to switch axis")
+	render(input_image_type, input_image_data, output_image_type, segmented_image_data)
 
 
 if __name__ == "__main__":
