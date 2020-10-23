@@ -1,22 +1,27 @@
 # coding=utf-8
 import itk
+import sys
+import getopt
 from render import render
 
-DIR = './'
 FILENAME = "BRATS_HG0015_T1C.mha"
-FILEPATH = DIR + FILENAME
-OUTPUT_PATH = DIR + "output.mha"
+USAGE = 'USAGE:\n' \
+        'python main.py [--help|-h] [--save|-s] [--output|-o <OutputPath>] [--norendering]\n\n' \
+        'OPTIONS:\n' \
+        '-s, --save         save image\n' \
+        '-o, --output       path for output segmented mask\n' \
+        '--norendering      program will not run vtk visualisation\n'
 
 
-def save_image(image_type, image_data):
+def save_image(image_type, image_data, output_path):
+	print("saved image in", output_path)
 	writer = itk.ImageFileWriter[image_type].New()
-	writer.SetFileName(OUTPUT_PATH)
+	writer.SetFileName(output_path)
 	writer.SetInput(image_data)
 	writer.Update()
 
 
-def main():
-	# ITK version should < 5.1 to use ImageToVTKImageFilter
+def main(output_path, is_saved, is_rendering):
 	print("ITK version: ", itk.Version.GetITKVersion())
 	print("Start processing image " + FILENAME)
 	
@@ -28,7 +33,7 @@ def main():
 	
 	# Read image
 	reader = itk.ImageFileReader[short_image_type].New()
-	reader.SetFileName(FILEPATH)
+	reader.SetFileName(FILENAME)
 	reader.Update()
 	input_image_data = reader.GetOutput()
 
@@ -40,7 +45,7 @@ def main():
 	cast1 = itk.CastImageFilter[short_image_type, float_image_type].New()
 	cast1.SetInput(input_image_data)
 	
-    # Apply a gradient anisotropic diffusion filter to reduce noise
+	# Apply a gradient anisotropic diffusion filter to reduce noise
 	prefilter = itk.GradientAnisotropicDiffusionImageFilter[float_image_type, float_image_type].New()
 	prefilter.SetInput(cast1.GetOutput())
 	prefilter.SetNumberOfIterations(20)
@@ -66,30 +71,50 @@ def main():
 	element2 = structuring_element_type.Ball(2) # a ball of radius 2
 
 	# Apply morphological closing to remove holes in segmented tumor
-	closing = itk.GrayscaleMorphologicalClosingImageFilter[float_image_type, 
-    	float_image_type, structuring_element_type].New()
+	closing = itk.GrayscaleMorphologicalClosingImageFilter[float_image_type, float_image_type, structuring_element_type].New()
 	closing.SetInput(rescaler.GetOutput())
 	closing.SetKernel(element1)
 
 	# Apply morphological opening to remove noise around segmented tumor
-	opening = itk.GrayscaleMorphologicalOpeningImageFilter[float_image_type, 
-    	float_image_type, structuring_element_type].New()
+	opening = itk.GrayscaleMorphologicalOpeningImageFilter[float_image_type, float_image_type, structuring_element_type].New()
 	opening.SetInput(closing.GetOutput())
 	opening.SetKernel(element2)
 
-    # Cast pixels from float to short to get initial type
+	# Cast pixels from float to short to get initial type
 	# (float to use filters, short because of 3D volume)
 	cast2 = itk.CastImageFilter[float_image_type, short_image_type].New()
 	cast2.SetInput(opening.GetOutput())
-     	
+
 	segmented_image_data = cast2.GetOutput()
-	save_image(short_image_type, segmented_image_data)
+	if is_saved:
+		save_image(short_image_type, segmented_image_data, output_path)
 	# -------------------------------------------------------------------------
 	
 	# render volume and slices
-	print("Render image - right click to switch axis")
-	render(short_image_type, input_image_data, segmented_image_data)
+	if is_rendering:
+		print("Render image - right click to switch axis")
+		render(short_image_type, input_image_data, segmented_image_data)
 
 
 if __name__ == "__main__":
-	main()
+	output_path = "output.mha"
+	is_saved = False
+	is_rendering = True
+	try:
+		opts, args = getopt.getopt(sys.argv[1:], "hso:", ["save", "output=", "norendering"])
+	except getopt.GetoptError:
+		print(USAGE)
+		sys.exit(2)
+
+	for opt, arg in opts:
+		if opt in ('-h', '--help'):
+			print(USAGE)
+			sys.exit()
+		elif opt in ('-s', '--save'):
+			is_saved = True
+		elif opt == '--norendering':
+			is_rendering = False
+		elif opt in ("-o", "--output"):
+			output_path = arg
+
+	main(output_path, is_saved, is_rendering)

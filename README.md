@@ -1,7 +1,16 @@
 # itk-vtk-projet
 Tumor segmentation and visualisation by Kathialina Va and Ngoc Phuong Anh DUONG.
 
-There are 2 renderers, one for the volume and one for the slicer concept. In the slider renderer, right click to the viewing axis.
+There are 2 renderers, one for the volume and one for the slicer concept. In the slider renderer, right click to switch the viewing axis.
+```
+USAGE:
+python main.py [--help|-h] [--save|-s] [--output|-o <OutputPath>] [--norendering]
+
+OPTIONS:
+-s, --save         save image
+-o, --output       path for output segmented mask
+--norendering      program will not run vtk visualisation
+```
 
 ## References:
 - Visualisation is inspired by [3D Slicer](https://www.slicer.org/)

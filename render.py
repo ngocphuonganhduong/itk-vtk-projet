@@ -3,33 +3,64 @@ import itk
 import vtk
 
 
+def _create_reslice_filter(vtk_obj, axis):
+	f = vtk.vtkImageReslice()
+	f.SetInputConnection(vtk_obj.GetOutputPort())
+	f.SetOutputDimensionality(2)
+	f.SetResliceAxes(axis)
+	f.SetInterpolationModeToLinear()
+	return f
+
+
 class CustomRender:
 	axes_name = ["Axial - x", "Coronal - y", "Sagittal - z"]
+	slider_min = 0.0
+	slider_max = 100.0
 	
-	def __set_up_filter(self, reader, mask_reader):
-		self.filter = vtk.vtkImageReslice()
-		self.filter.SetInputConnection(reader.GetOutputPort())
-		self.filter.SetOutputDimensionality(2)
-		self.filter.SetResliceAxes(self.axes[self.axis])
-		self.filter.SetInterpolationModeToLinear()
-		
-		self.mask_filter = vtk.vtkImageReslice()
-		self.mask_filter.SetInputConnection(mask_reader.GetOutputPort())
-		self.mask_filter.SetOutputDimensionality(2)
-		self.mask_filter.SetResliceAxes(self.axes[self.axis])
-		self.mask_filter.SetInterpolationModeToLinear()
+	def __init__(self, input_reader, mask_reader, volume, mask_volume, default_axis=0):
+		min_x, max_x, min_y, max_y, min_z, max_z = mask_reader.GetExecutive().GetWholeExtent(
+			mask_reader.GetOutputInformation(0))
+		spacing = mask_reader.GetOutput().GetSpacing()
+		self.origin = mask_reader.GetOutput().GetOrigin()
+		self.size = [(max_x - min_x) * spacing[0], (max_y - min_y) * spacing[1], (max_z - min_z) * spacing[2]]
+		center = [self.origin[0] + 0.5 * self.size[0],
+		          self.origin[1] + 0.5 * self.size[1],
+		          self.origin[2] + 0.5 * self.size[2]]
+
+		self.axes = [vtk.vtkMatrix4x4(), vtk.vtkMatrix4x4(), vtk.vtkMatrix4x4()]
+		# axial
+		self.axes[0].DeepCopy((1, 0, 0, center[0],
+		                       0, 1, 0, center[1],
+		                       0, 0, 1, center[2],
+		                       0, 0, 0, 1))
+		# coronal
+		self.axes[1].DeepCopy((1, 0, 0, center[0], 0, 0, 1, center[1], 0, -1, 0, center[2], 0, 0, 0, 1))
+
+		# sagittal
+		self.axes[2].DeepCopy((0, 0, -1, center[0], 1, 0, 0, center[1], 0, -1, 0, center[2], 0, 0, 0, 1))
+
+		self.axis = default_axis
+
+		self.__set_up_vtk_slicer(input_reader, mask_reader)
+		self.__set_up_drawing_actor()
+		self.__set_up_renderer(volume, mask_volume)
+		self.__set_up_slider()
+
+	def __set_up_vtk_slicer(self, vtk_obj, mask_vtk_obj):
+		self.filter = _create_reslice_filter(vtk_obj, self.axes[self.axis])
+		self.mask_filter = _create_reslice_filter(mask_vtk_obj, self.axes[self.axis])
 	
 	def __set_up_drawing_actor(self):
-		table = vtk.vtkLookupTable()
-		table.SetRange(0, 1000)
-		table.SetValueRange(0.0, 1.0)  # from black to white
-		table.SetSaturationRange(0.0, 0.0)  # no color saturation
-		table.SetRampToLinear()
-		table.Build()
+		lut = vtk.vtkLookupTable()
+		lut.SetRange(0, 1000)
+		lut.SetValueRange(0.0, 1.0)  # from black to white
+		lut.SetSaturationRange(0.0, 0.0)  # no color saturation
+		lut.SetRampToLinear()
+		lut.Build()
 		
 		# Map the image through the lookup table
 		color = vtk.vtkImageMapToColors()
-		color.SetLookupTable(table)
+		color.SetLookupTable(lut)
 		color.SetInputConnection(self.filter.GetOutputPort())
 		
 		# Display the image
@@ -55,15 +86,15 @@ class CustomRender:
 		self.img_ren.AddActor(self.actor)
 		self.img_ren.AddActor(self.mask_actor)
 		self.img_ren.ResetCamera()
-		self.img_ren.SetViewport([0.0, 0.0, 1.0, 0.5])
-		
+		self.img_ren.SetViewport([0.0, 0.0, 1.0, 0.5])  # slicer renderer position - bottom half
+
 		self.vol_ren = vtk.vtkRenderer()
 		self.vol_ren.AddVolume(volume)
 		self.vol_ren.AddVolume(mask_volume)
 		self.vol_ren.ResetCamera()
-		self.vol_ren.SetViewport(0.0, 0.5, 1.0, 1.0)
+		self.vol_ren.SetViewport(0.0, 0.5, 1.0, 1.0)  # volume renderer position
 		self.vol_ren.SetBackground(0.0, 0.01, 0.05)
-		
+
 		self.win = vtk.vtkRenderWindow()
 		self.win.SetSize(400, 800)
 		self.win.AddRenderer(self.img_ren)
@@ -83,11 +114,11 @@ class CustomRender:
 		self.iren.AddObserver("MouseMoveEvent", self.switch_interactor_style)
 	
 	def __set_up_slider(self):
-		minv, maxv = 0.0, 100.0
+		# slider gui
 		self.slider_rep = vtk.vtkSliderRepresentation2D()
-		self.slider_rep.SetMinimumValue(minv)
-		self.slider_rep.SetMaximumValue(maxv)
-		self.slider_rep.SetValue((maxv - minv) / 2.0)
+		self.slider_rep.SetMinimumValue(self.slider_min)
+		self.slider_rep.SetMaximumValue(self.slider_max)
+		self.slider_rep.SetValue((self.slider_max - self.slider_min) / 2.0)
 		self.slider_rep.SetTitleText(self.axes_name[self.axis] + " - right click to switch axis")
 		
 		self.slider_rep.GetSliderProperty().SetColor(1, 1, 0.1)
@@ -99,42 +130,12 @@ class CustomRender:
 		self.slider_rep.GetPoint2Coordinate().SetCoordinateSystemToDisplay()
 		self.slider_rep.GetPoint2Coordinate().SetValue(260, 450)
 		
+		# handling slider event
 		self.slider_wid = vtk.vtkSliderWidget()
 		self.slider_wid.SetInteractor(self.iren)
 		self.slider_wid.SetRepresentation(self.slider_rep)
-		self.slider_wid.SetAnimationModeToAnimate()
 		self.slider_wid.EnabledOn()
 		self.slider_wid.AddObserver(vtk.vtkCommand.InteractionEvent, self.slider_call_back)
-	
-	def __init__(self, input_reader, mask_reader, volume, mask_volume, default_axis=0):
-		min_x, max_x, min_y, max_y, min_z, max_z = mask_reader.GetExecutive().GetWholeExtent(
-			mask_reader.GetOutputInformation(0))
-		spacing = mask_reader.GetOutput().GetSpacing()
-		self.origin = mask_reader.GetOutput().GetOrigin()
-		self.size = [(max_x - min_x) * spacing[0], (max_y - min_y) * spacing[1], (max_z - min_z) * spacing[2]]
-		center = [self.origin[0] + 0.5 * self.size[0],
-		          self.origin[1] + 0.5 * self.size[1],
-		          self.origin[2] + 0.5 * self.size[2]]
-		
-		self.axes = [vtk.vtkMatrix4x4(), vtk.vtkMatrix4x4(), vtk.vtkMatrix4x4()]
-		# axial
-		self.axes[0].DeepCopy((1, 0, 0, center[0],
-		                       0, 1, 0, center[1],
-		                       0, 0, 1, center[2],
-		                       0, 0, 0, 1))
-		# coronal
-		self.axes[1].DeepCopy((1, 0, 0, center[0], 0, 0, 1, center[1], 0, -1, 0, center[2], 0, 0, 0, 1))
-		
-		# sagittal
-		self.axes[2].DeepCopy((0, 0, -1, center[0], 1, 0, 0, center[1], 0, -1, 0, center[2], 0, 0, 0, 1))
-		
-		self.axis = default_axis
-		
-		self.__set_up_filter(input_reader, mask_reader)
-		
-		self.__set_up_drawing_actor()
-		self.__set_up_renderer(volume, mask_volume)
-		self.__set_up_slider()
 	
 	def render(self):
 		self.iren.Initialize()
@@ -157,6 +158,7 @@ class CustomRender:
 		self.win.Render()
 	
 	def switch_interactor_style(self, obj, event):
+		# switching interactor style depending on the mouse position
 		last_pos = self.iren.GetLastEventPosition()
 		cur_pos = self.iren.GetEventPosition()
 		ren = self.iren.FindPokedRenderer(cur_pos[0], last_pos[1])
@@ -166,61 +168,57 @@ class CustomRender:
 			self.iren.SetInteractorStyle(self.volume_style)
 
 
-def _from_itk_to_vtk(image_type, image_data):
+def _from_itk_to_vtk(image_type, image_data, color_func=None, opacity_func=None):
+	# convert itk to vtk image data
 	itk_to_vtk = itk.ImageToVTKImageFilter[image_type].New()
 	itk_to_vtk.SetInput(image_data)
 	itk_to_vtk.Update()
 	
 	vtk_image_data = itk_to_vtk.GetOutput()
 	
+	# convert vtk image data to vtk object for slicer rendering
 	cast_filter = vtk.vtkImageCast()
 	cast_filter.SetInputData(vtk_image_data)
 	cast_filter.Update()
-	return cast_filter, vtk_image_data
-
-
-def render(image_type, image_data, seg_mask_data):
-	# convert itk image to vtk image data
-	input_cast_filter, vtk_input_image_data = _from_itk_to_vtk(image_type, image_data)
-	seg_cast_filter, vtk_seg_mask_data = _from_itk_to_vtk(image_type, seg_mask_data)
 	
-	# create volume from mask data
-	mask_volume = vtk.vtkVolume()
+	# convert vtk image data to vtk volume for volume rendering
+	vol = vtk.vtkVolume()
 	mapper = vtk.vtkSmartVolumeMapper()
-	mapper.SetInputData(vtk_seg_mask_data)
-	mask_volume.SetMapper(mapper)
+	mapper.SetInputData(vtk_image_data)
+	vol.SetMapper(mapper)
 	
-	color_func = vtk.vtkColorTransferFunction()
-	color_func.AddRGBPoint(100, 0.4, 0.0, 0.0)
-	color_func.AddRGBPoint(255, 0.8, 0.0, 0.0)
-	opacity_func = vtk.vtkPiecewiseFunction()
+	if color_func is None:
+		color_func = vtk.vtkColorTransferFunction()
+
+	if opacity_func is None:
+		opacity_func = vtk.vtkPiecewiseFunction()
 	
 	volume_property = vtk.vtkVolumeProperty()
 	volume_property.SetColor(color_func)
 	volume_property.SetScalarOpacity(opacity_func)
 	volume_property.SetInterpolationTypeToLinear()
 	
-	mask_volume.SetProperty(volume_property)
-	mask_volume.SetMapper(mapper)
+	vol.SetProperty(volume_property)
+	vol.SetMapper(mapper)
 	
-	volume = vtk.vtkVolume()
-	mapper = vtk.vtkSmartVolumeMapper()
-	mapper.SetInputData(vtk_input_image_data)
-	volume.SetMapper(mapper)
-	
+	return cast_filter, vol
+
+
+def render(image_type, image_data, seg_mask_data):
+	# create color function for mask volume - tumor color
 	color_func = vtk.vtkColorTransferFunction()
+	color_func.AddRGBPoint(100, 0.4, 0.1, 0.0)
+	color_func.AddRGBPoint(255, 0.8, 0.4, 0.0)
+
+	# create opacity function for original input volume
 	opacity_func = vtk.vtkPiecewiseFunction()
 	opacity_func.AddPoint(100, 0.0)
 	opacity_func.AddPoint(151, 0.3)
 	opacity_func.AddPoint(255, 0.5)
-	
-	volume_property = vtk.vtkVolumeProperty()
-	volume_property.SetColor(color_func)
-	volume_property.SetScalarOpacity(opacity_func)
-	volume_property.SetInterpolationTypeToLinear()
-	
-	volume.SetProperty(volume_property)
-	volume.SetMapper(mapper)
-	
-	custom_ren = CustomRender(input_cast_filter, seg_cast_filter, volume, mask_volume)
+
+	# convert itk image data to vtk image data and volume
+	input_cast_filter, input_volume = _from_itk_to_vtk(image_type, image_data, opacity_func=opacity_func)
+	seg_cast_filter, output_mask_volume = _from_itk_to_vtk(image_type, seg_mask_data, color_func=color_func)
+
+	custom_ren = CustomRender(input_cast_filter, seg_cast_filter, input_volume, output_mask_volume)
 	custom_ren.render()
