@@ -14,7 +14,7 @@ USAGE = 'USAGE:\n' \
 
 
 def save_image(image_type, image_data, output_path):
-	print("saved image in", output_path)
+	print("saving image in", output_path)
 	writer = itk.ImageFileWriter[image_type].New()
 	writer.SetFileName(output_path)
 	writer.SetInput(image_data)
@@ -101,7 +101,7 @@ if __name__ == "__main__":
 	is_saved = False
 	is_rendering = True
 	try:
-		opts, args = getopt.getopt(sys.argv[1:], "hso:", ["save", "output=", "norendering"])
+		opts, args = getopt.getopt(sys.argv[1:], "hso:", ["help", "save", "output=", "norendering"])
 	except getopt.GetoptError:
 		print(USAGE)
 		sys.exit(2)
