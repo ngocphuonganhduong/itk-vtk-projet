@@ -50,7 +50,7 @@ class CustomRender:
 		self.mask_actor.GetMapper().SetInputConnection(color.GetOutputPort())
 		self.mask_actor.SetOpacity(0.7)
 	
-	def __set_up_renderer(self, volume):
+	def __set_up_renderer(self, volume, mask_volume):
 		self.img_ren = vtk.vtkRenderer()
 		self.img_ren.AddActor(self.actor)
 		self.img_ren.AddActor(self.mask_actor)
@@ -59,6 +59,7 @@ class CustomRender:
 		
 		self.vol_ren = vtk.vtkRenderer()
 		self.vol_ren.AddVolume(volume)
+		self.vol_ren.AddVolume(mask_volume)
 		self.vol_ren.ResetCamera()
 		self.vol_ren.SetViewport(0.0, 0.5, 1.0, 1.0)
 		self.vol_ren.SetBackground(0.0, 0.01, 0.05)
@@ -87,7 +88,7 @@ class CustomRender:
 		self.slider_rep.SetMinimumValue(minv)
 		self.slider_rep.SetMaximumValue(maxv)
 		self.slider_rep.SetValue((maxv - minv) / 2.0)
-		self.slider_rep.SetTitleText(self.axes_name[self.axis])
+		self.slider_rep.SetTitleText(self.axes_name[self.axis] + " - right click to switch axis")
 		
 		self.slider_rep.GetSliderProperty().SetColor(1, 1, 0.1)
 		self.slider_rep.GetSelectedProperty().SetColor(0, 1, 0)
@@ -105,7 +106,7 @@ class CustomRender:
 		self.slider_wid.EnabledOn()
 		self.slider_wid.AddObserver(vtk.vtkCommand.InteractionEvent, self.slider_call_back)
 	
-	def __init__(self, input_reader, mask_reader, volume, default_axis=0):
+	def __init__(self, input_reader, mask_reader, volume, mask_volume, default_axis=0):
 		min_x, max_x, min_y, max_y, min_z, max_z = mask_reader.GetExecutive().GetWholeExtent(
 			mask_reader.GetOutputInformation(0))
 		spacing = mask_reader.GetOutput().GetSpacing()
@@ -132,7 +133,7 @@ class CustomRender:
 		self.__set_up_filter(input_reader, mask_reader)
 		
 		self.__set_up_drawing_actor()
-		self.__set_up_renderer(volume)
+		self.__set_up_renderer(volume, mask_volume)
 		self.__set_up_slider()
 	
 	def render(self):
@@ -152,7 +153,7 @@ class CustomRender:
 		self.filter.SetResliceAxes(self.axes[self.axis])
 		self.mask_filter.SetResliceAxes(self.axes[self.axis])
 		self.slider_rep.SetValue((self.slider_rep.GetMaximumValue() - self.slider_rep.GetMinimumValue()) / 2.0)
-		self.slider_rep.SetTitleText(self.axes_name[self.axis])
+		self.slider_rep.SetTitleText(self.axes_name[self.axis] + " - right click to switch axis")
 		self.win.Render()
 	
 	def switch_interactor_style(self, obj, event):
@@ -183,14 +184,36 @@ def render(input_image_type, input_image_data, seg_mask_type, seg_mask_data):
 	input_cast_filter, vtk_input_image_data = _from_itk_to_vtk(input_image_type, input_image_data)
 	seg_cast_filter, vtk_seg_mask_data = _from_itk_to_vtk(seg_mask_type, seg_mask_data)
 	
-	# create volume from image data
-	volume = vtk.vtkVolume()
+	# create volume from mask data
+	mask_volume = vtk.vtkVolume()
 	mapper = vtk.vtkSmartVolumeMapper()
 	mapper.SetInputData(vtk_seg_mask_data)
+	mask_volume.SetMapper(mapper)
+	
+	color_func = vtk.vtkColorTransferFunction()
+	color_func.AddRGBPoint(100, 0.4, 0.0, 0.0)
+	color_func.AddRGBPoint(255, 0.8, 0.0, 0.0)
+	opacity_func = vtk.vtkPiecewiseFunction()
+	
+	volume_property = vtk.vtkVolumeProperty()
+	volume_property.SetColor(color_func)
+	volume_property.SetScalarOpacity(opacity_func)
+	volume_property.SetInterpolationTypeToLinear()
+	
+	mask_volume.SetProperty(volume_property)
+	mask_volume.SetMapper(mapper)
+	
+	volume = vtk.vtkVolume()
+	mapper = vtk.vtkSmartVolumeMapper()
+	mapper.SetInputData(vtk_input_image_data)
 	volume.SetMapper(mapper)
 	
 	color_func = vtk.vtkColorTransferFunction()
 	opacity_func = vtk.vtkPiecewiseFunction()
+	opacity_func.AddPoint(100, 0.0)
+	opacity_func.AddPoint(151, 0.3)
+	opacity_func.AddPoint(255, 0.5)
+	
 	volume_property = vtk.vtkVolumeProperty()
 	volume_property.SetColor(color_func)
 	volume_property.SetScalarOpacity(opacity_func)
@@ -199,5 +222,5 @@ def render(input_image_type, input_image_data, seg_mask_type, seg_mask_data):
 	volume.SetProperty(volume_property)
 	volume.SetMapper(mapper)
 	
-	custom_ren = CustomRender(input_cast_filter, seg_cast_filter, volume)
+	custom_ren = CustomRender(input_cast_filter, seg_cast_filter, volume, mask_volume)
 	custom_ren.render()
