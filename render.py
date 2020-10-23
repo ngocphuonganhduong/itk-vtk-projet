@@ -179,10 +179,10 @@ def _from_itk_to_vtk(image_type, image_data):
 	return cast_filter, vtk_image_data
 
 
-def render(input_image_type, input_image_data, seg_mask_type, seg_mask_data):
+def render(image_type, image_data, seg_mask_data):
 	# convert itk image to vtk image data
-	input_cast_filter, vtk_input_image_data = _from_itk_to_vtk(input_image_type, input_image_data)
-	seg_cast_filter, vtk_seg_mask_data = _from_itk_to_vtk(seg_mask_type, seg_mask_data)
+	input_cast_filter, vtk_input_image_data = _from_itk_to_vtk(image_type, image_data)
+	seg_cast_filter, vtk_seg_mask_data = _from_itk_to_vtk(image_type, seg_mask_data)
 	
 	# create volume from mask data
 	mask_volume = vtk.vtkVolume()

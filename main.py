@@ -21,13 +21,13 @@ def main():
 	print("Start processing image " + FILENAME)
 	
 	dim = 3
-	input_pixel_type = itk.ctype('float')
-	input_image_type = itk.Image[input_pixel_type, dim]
-	output_pixel_type = itk.ctype('short')
-	output_image_type = itk.Image[output_pixel_type, dim]
+	float_pixel_type = itk.ctype('float')
+	float_image_type = itk.Image[float_pixel_type, dim]
+	short_pixel_type = itk.ctype('short')
+	short_image_type = itk.Image[short_pixel_type, dim]
 	
 	# Read image
-	reader = itk.ImageFileReader[input_image_type].New()
+	reader = itk.ImageFileReader[short_image_type].New()
 	reader.SetFileName(FILEPATH)
 	reader.Update()
 	input_image_data = reader.GetOutput()
@@ -35,22 +35,27 @@ def main():
 	# SEGMENTATION
 	# -------------------------------------------------------------------------
 
-	# Apply a gradient anisotropic diffusion filter to reduce noise
-	prefilter = itk.GradientAnisotropicDiffusionImageFilter[input_image_type, input_image_type].New()
-	prefilter.SetInput(input_image_data)
+    # Cast pixels from short to float to use filters
+	# (float to use filters, short because of 3D volume)
+	cast1 = itk.CastImageFilter[short_image_type, float_image_type].New()
+	cast1.SetInput(input_image_data)
+	
+    # Apply a gradient anisotropic diffusion filter to reduce noise
+	prefilter = itk.GradientAnisotropicDiffusionImageFilter[float_image_type, float_image_type].New()
+	prefilter.SetInput(cast1.GetOutput())
 	prefilter.SetNumberOfIterations(20)
 	prefilter.SetConductanceParameter(3)
 	prefilter.SetTimeStep(0.04)
 
 	# Segment the tumor with a connected threshold filter
-	segment = itk.ConnectedThresholdImageFilter[input_image_type, input_image_type].New()
+	segment = itk.ConnectedThresholdImageFilter[float_image_type, float_image_type].New()
 	segment.SetInput(prefilter.GetOutput())
 	segment.SetSeed([75, 80, 100])
 	segment.SetUpper(1500)
 	segment.SetLower(900)
 
 	# Rescale image intensity from 0 to 255
-	rescaler = itk.RescaleIntensityImageFilter[input_image_type, input_image_type].New()
+	rescaler = itk.RescaleIntensityImageFilter[float_image_type, float_image_type].New()
 	rescaler.SetInput(segment.GetOutput())
 	rescaler.SetOutputMinimum(0)
 	rescaler.SetOutputMaximum(255)
@@ -61,29 +66,29 @@ def main():
 	element2 = structuring_element_type.Ball(2) # a ball of radius 2
 
 	# Apply morphological closing to remove holes in segmented tumor
-	closing = itk.GrayscaleMorphologicalClosingImageFilter[input_image_type, 
-    	input_image_type, structuring_element_type].New()
+	closing = itk.GrayscaleMorphologicalClosingImageFilter[float_image_type, 
+    	float_image_type, structuring_element_type].New()
 	closing.SetInput(rescaler.GetOutput())
 	closing.SetKernel(element1)
 
 	# Apply morphological opening to remove noise around segmented tumor
-	opening = itk.GrayscaleMorphologicalOpeningImageFilter[input_image_type, 
-    	input_image_type, structuring_element_type].New()
+	opening = itk.GrayscaleMorphologicalOpeningImageFilter[float_image_type, 
+    	float_image_type, structuring_element_type].New()
 	opening.SetInput(closing.GetOutput())
 	opening.SetKernel(element2)
 
-    # Cast pixels from float to short 
+    # Cast pixels from float to short to get initial type
 	# (float to use filters, short because of 3D volume)
-	cast = itk.CastImageFilter[input_image_type, output_image_type].New()
-	cast.SetInput(opening.GetOutput())
+	cast2 = itk.CastImageFilter[float_image_type, short_image_type].New()
+	cast2.SetInput(opening.GetOutput())
      	
-	segmented_image_data = cast.GetOutput()
-	save_image(output_image_type, segmented_image_data)
+	segmented_image_data = cast2.GetOutput()
+	save_image(short_image_type, segmented_image_data)
 	# -------------------------------------------------------------------------
 	
 	# render volume and slices
 	print("Render image - right click to switch axis")
-	render(input_image_type, input_image_data, output_image_type, segmented_image_data)
+	render(short_image_type, input_image_data, segmented_image_data)
 
 
 if __name__ == "__main__":
