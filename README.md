@@ -1,7 +1,10 @@
 # itk-vtk-projet
-Tumor segmentation and visualisation by Kathialina Va and Ngoc Phuong Anh DUONG.
+Tumor segmentation and visualisation (data: BRATS_HG0015_T1C.mha) by Kathialina Va and Ngoc Phuong Anh DUONG.
 
 There are 2 renderers, one for the volume and one for the slicer concept. In the slider renderer, right click to switch the viewing axis.
+
+![](visualisation.png)
+
 ```
 USAGE:
 python main.py [--help|-h] [--save|-s] [--output|-o <OutputPath>] [--norendering]
